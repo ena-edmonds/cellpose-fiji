@@ -1,0 +1,155 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!--
+      The pom-scijava parent is what makes menu ordering work: it configures the
+      SciJava annotation processor (org.scijava.annotations) so that when javac
+      compiles these classes it scans @Plugin/@Menu and writes
+      META-INF/json/org.scijava.plugin.Plugin. That index carries your @Menu
+      weights; without it, ImageJ falls back to alphabetical order.
+
+      With plain Java there is nothing extra to configure: javac runs the
+      annotation processor automatically because it is on the classpath via
+      scijava-common. This is why Java is the low-friction path here.
+
+      Bump <version> to the latest pom-scijava release available to you.
+    -->
+    <parent>
+        <groupId>org.scijava</groupId>
+        <artifactId>pom-scijava</artifactId>
+        <version>37.0.0</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>com.example</groupId>
+    <artifactId>cellpose-fiji</artifactId>
+    <version>0.1.0</version>
+
+    <name>Cellpose Fiji Commands</name>
+    <description>Cellpose segmentation and model management commands for Fiji, with explicit menu ordering.</description>
+    <url>https://example.com/cellpose-fiji</url>
+    <inceptionYear>2026</inceptionYear>
+    <organization>
+        <name>Example</name>
+        <url>https://example.com</url>
+    </organization>
+    <licenses>
+        <license>
+            <name>Simplified BSD License</name>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
+    <developers>
+        <developer>
+            <id>you</id>
+            <name>Your Name</name>
+        </developer>
+    </developers>
+    <contributors>
+        <contributor><name>None</name></contributor>
+    </contributors>
+
+    <mailingLists>
+        <mailingList>
+            <name>Image.sc Forum</name>
+            <archive>https://forum.image.sc/</archive>
+        </mailingList>
+    </mailingLists>
+
+    <scm>
+        <connection>scm:git:https://github.com/you/cellpose-fiji</connection>
+        <developerConnection>scm:git:git@github.com:you/cellpose-fiji</developerConnection>
+        <tag>HEAD</tag>
+        <url>https://github.com/you/cellpose-fiji</url>
+    </scm>
+    <issueManagement>
+        <system>GitHub Issues</system>
+        <url>https://github.com/you/cellpose-fiji/issues</url>
+    </issueManagement>
+    <ciManagement>
+        <system>None</system>
+    </ciManagement>
+
+    <properties>
+        <package-name>com.example.cellpose</package-name>
+        <license.licenseName>bsd_2</license.licenseName>
+        <license.copyrightOwners>Your Name</license.copyrightOwners>
+        <!--
+          pom-scijava pins the compiler release low (8/11) for broad compatibility.
+          The Python worker scripts use Java text blocks (""" ... """), which need
+          source level 15+. Raise the release so they compile. Requires a JDK of at
+          least this version on your PATH; 17 is a safe, widely available LTS.
+        -->
+        <maven.compiler.release>17</maven.compiler.release>
+    </properties>
+
+    <repositories>
+        <repository>
+            <id>scijava.public</id>
+            <url>https://maven.scijava.org/content/groups/public</url>
+        </repository>
+    </repositories>
+
+    <dependencies>
+        <!--
+          scijava-common: @Plugin, @Menu, Command, @Parameter, ItemIO.
+          ij: ImagePlus, IJ, GenericDialog, RoiManager, etc.
+          Versions are managed by the pom-scijava parent, so no <version> tags
+          here. Do NOT add net.imagej:imagej — it drags in imagej-scripting →
+          scripting-groovy → org.codehaus.groovy (old Groovy 3), which collides
+          with the Groovy 4 managed by pom-scijava and trips BanDuplicateClasses.
+          This code needs no ImageJ2 aggregator class (ItemIO is in scijava-common).
+        -->
+        <dependency>
+            <groupId>org.scijava</groupId>
+            <artifactId>scijava-common</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>net.imagej</groupId>
+            <artifactId>ij</artifactId>
+        </dependency>
+
+        <!--
+          Appose: verify this coordinate/version against the build you use.
+          If Appose is not on the SciJava Maven repo, install the jar into your
+          local repo (mvn install:install-file) or add the repository that hosts it.
+        -->
+        <dependency>
+            <groupId>org.apposed</groupId>
+            <artifactId>appose</artifactId>
+            <version>0.12.0</version>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!--
+              On JDK 21+, javac no longer auto-runs annotation processors found
+              only on the classpath, so the SciJava processor silently does not
+              write META-INF/json/org.scijava.plugin.Plugin — the index that
+              carries your @Menu weights. Declaring the processor explicitly here
+              forces it to run regardless of JDK default behavior.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.scijava</groupId>
+                            <artifactId>scijava-common</artifactId>
+                            <version>${scijava-common.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
+                    <annotationProcessors>
+                        <annotationProcessor>org.scijava.annotations.AnnotationProcessor</annotationProcessor>
+                    </annotationProcessors>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
