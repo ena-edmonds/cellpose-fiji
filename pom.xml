@@ -112,6 +112,14 @@
             <groupId>net.imagej</groupId>
             <artifactId>ij</artifactId>
         </dependency>
+        <dependency>
+            <groupId>sc.fiji</groupId>
+            <artifactId>fiji-lib</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>ome</groupId>
+            <artifactId>bio-formats_plugins</artifactId>
+        </dependency>
 
         <!--
           Appose: verify this coordinate/version against the build you use.

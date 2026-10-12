@@ -98,9 +98,14 @@ if img.shape[0] == 1:
 else:
     ch_axis = 0
 
+if cell_diam == 0:
+    dia = None
+else:
+    dia = cell_diam
+
 gpu = device.type != "cpu"
 model = models.CellposeModel(gpu=gpu, device=device, pretrained_model=custom_model)
-masks, flows, styles = model.eval(img, channel_axis=ch_axis, flow_threshold=0.0)
+masks, flows, styles = model.eval(img, channel_axis=ch_axis, flow_threshold=flow_thresh, diameter=dia, min_size=min_cell_size, cellprob_threshold=cell_proba)
 
 res = mask.ndarray()
 res[:] = masks.astype("int32")
@@ -149,6 +154,7 @@ res[:] = masks.astype("int32")
             if (showGpuBox) gd.addCheckbox("Use GPU", GpuSupport.defaultChecked());
             gd.addCheckbox("Skip images that already have _Rois.zip", true);
             gd.addCheckbox("Write summary CSV (image, ROI count, mean size)", true);
+            gd.addCheckbox("Advanced mode", false);
             gd.showDialog();
             if (gd.wasCanceled()) return;
 
@@ -161,6 +167,26 @@ res[:] = masks.astype("int32")
             }
             boolean skipExisting = gd.getNextBoolean();
             boolean writeCsv = gd.getNextBoolean();
+
+            // Advanced mode settings
+            boolean advancedMode = gd.getNextBoolean();
+            int cellDiam = 0;
+            double flowTresh = 0.0;
+            double cellProb = 0.0;
+            int minSize = 15;
+            GenericDialog advDialog = new GenericDialog("Advanced Settings");
+            advDialog.addNumericField("Cell diameter (px)", 0);
+            advDialog.addSlider("Flow threshold", 0.0, 3.0, 0.0, 0.1);
+            advDialog.addSlider("Cellprob threshold", -6.0, 6.0, 0.0, 0.1);
+            advDialog.addNumericField("Min ROI size (px)", 15);
+            if (advancedMode) {
+                advDialog.showDialog();
+                if(advDialog.wasCanceled()) return;
+                cellDiam = (int) advDialog.getNextNumber();
+                flowTresh = advDialog.getNextNumber();
+                cellProb = advDialog.getNextNumber();
+                minSize = (int) advDialog.getNextNumber();
+            }
 
             // Build the environment once for the whole batch.
             IJ.showStatus("Cellpose: preparing environment (first run may take minutes)…");
@@ -209,6 +235,10 @@ res[:] = masks.astype("int32")
                         inputs.put("mask", ndMask);
                         inputs.put("use_gpu", useGpu);
                         inputs.put("custom_model", model);
+                        inputs.put("cell_diam", cellDiam);
+                        inputs.put("flow_thresh", flowTresh);
+                        inputs.put("cell_proba", cellProb);
+                        inputs.put("min_cell_size", minSize);
 
                         Service.Task task = python.task(WORKER, inputs);
                         task.waitFor();

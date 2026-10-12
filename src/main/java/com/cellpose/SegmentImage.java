@@ -76,6 +76,7 @@ public class SegmentImage implements Command {
             if (showGpuBox) {
                 gd.addCheckbox("Use GPU", GpuSupport.defaultChecked());
             }
+            gd.addCheckbox("Advanced mode", false);
             gd.showDialog();
             if (gd.wasCanceled()) return;
 
@@ -88,6 +89,26 @@ public class SegmentImage implements Command {
                 GpuSupport.recordChoice(useGpu);
             }
 
+            // Advanced mode settings
+            boolean advancedMode = gd.getNextBoolean();
+            int cellDiam = 0;
+            double flowTresh = 0.0;
+            double cellProb = 0.0;
+            int minSize = 15;
+            GenericDialog advDialog = new GenericDialog("Advanced Settings");
+            advDialog.addNumericField("Cell diameter (px)", 0);
+            advDialog.addSlider("Flow threshold", 0.0, 3.0, 0.0, 0.1);
+            advDialog.addSlider("Cellprob threshold", -6.0, 6.0, 0.0, 0.1);
+            advDialog.addNumericField("Min ROI size (px)", 15);
+            if (advancedMode) {
+                advDialog.showDialog();
+                if(advDialog.wasCanceled()) return;
+                cellDiam = (int) advDialog.getNextNumber();
+                flowTresh = advDialog.getNextNumber();
+                cellProb = advDialog.getNextNumber();
+                minSize = (int) advDialog.getNextNumber();
+            }
+            
             // start prepping image for the run
             int w = imp.getWidth(), h = imp.getHeight();
             int n = w * h;
@@ -145,11 +166,16 @@ if img.shape[0] == 1:
 else:
     ch_axis = 0
 
+if cell_diam == 0:
+    dia = None
+else:
+    dia = cell_diam
+
 gpu = device.type != "cpu"
 model = models.CellposeModel(gpu=gpu, device=device, pretrained_model=custom_model)
 
 task.update("Segmenting (" + device.type + ")", current=2, maximum=3)
-masks, flows, styles = model.eval(img, channel_axis=ch_axis, flow_threshold=0.0)
+masks, flows, styles = model.eval(img, channel_axis=ch_axis, flow_threshold=flow_thresh, diameter=dia, min_size=min_cell_size, cellprob_threshold=cell_proba)
 
 task.update("Writing masks", current=3, maximum=3)
 res = mask.ndarray()
@@ -177,6 +203,10 @@ from cellpose import models
                 inputs.put("mask", ndMask);
                 inputs.put("use_gpu", useGpu);
                 inputs.put("custom_model", model);
+                inputs.put("cell_diam", cellDiam);
+                inputs.put("flow_thresh", flowTresh);
+                inputs.put("cell_proba", cellProb);
+                inputs.put("min_cell_size", minSize);
                 Service.Task task = python.task(script, inputs);
                 // Forward worker stage updates to the Fiji status bar
                 task.listen(e -> {
