@@ -29,7 +29,6 @@ public class ConvertCzi implements Command {
                 IJ.log("Failed: " + czi.getName() + " (" + e.getMessage() + ")");
             }
         }
-        IJ.showStatus("Flatten stacks: Finished!");
     }
 
     private void processCzi(File czi) throws Exception {

@@ -73,9 +73,7 @@ public class SegmentImage implements Command {
             // usable GPU. Default it on when a GPU is known available (or to the user's
             // remembered choice); see GpuSupport for the caching rules.
             boolean showGpuBox = GpuSupport.shouldShowCheckbox();
-            if (showGpuBox) {
-                gd.addCheckbox("Use GPU", GpuSupport.defaultChecked());
-            }
+            if (showGpuBox) gd.addCheckbox("Use GPU", GpuSupport.defaultChecked());
             gd.addCheckbox("Advanced mode", false);
             gd.showDialog();
             if (gd.wasCanceled()) return;
