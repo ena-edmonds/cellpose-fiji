@@ -19,11 +19,11 @@ public class ConvertCzi implements Command {
         DebugTools.setRootLevel("ERROR"); // make the console not get spammed with a bunch of warnings
 
         DirectoryChooser dc = new DirectoryChooser("Choose a folder of czi files to convert");
-        String dirPath = dc.getDirectory();
-        if (dirPath == null) return; // canceled
-        for(File czi : new File(dirPath).listFiles()) {
+        File directory = new File(dc.getDirectory());
+        if (dc.getDirectory() == null) return; // canceled
+        for(File czi : directory.listFiles()) {
             // if the file is a CZI and the equivalent projection .png doesn't exist, process it
-            if(isCzi(czi) && !(new File(new File(dirPath), czi.getName().replaceAll(".czi", "_MAX.png")).exists())) try {
+            if(isCzi(czi) && !(new File(directory, czi.getName().replaceAll(".czi", "_MAX.png")).exists())) try {
                 processCzi(czi); 
             } catch (Exception e ) {
                 IJ.log("Failed: " + czi.getName() + " (" + e.getMessage() + ")");
