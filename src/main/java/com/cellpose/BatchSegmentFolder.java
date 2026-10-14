@@ -170,23 +170,17 @@ res[:] = masks.astype("int32")
 
             // Advanced mode settings
             boolean advancedMode = gd.getNextBoolean();
-            int cellDiam = 0;
-            double flowTresh = 0.0;
-            double cellProb = 0.0;
-            int minSize = 15;
             GenericDialog advDialog = new GenericDialog("Advanced Settings");
             advDialog.addNumericField("Cell diameter (px)", 0);
             advDialog.addSlider("Flow threshold", 0.0, 3.0, 0.0, 0.1);
             advDialog.addSlider("Cellprob threshold", -6.0, 6.0, 0.0, 0.1);
             advDialog.addNumericField("Min ROI size (px)", 15);
-            if (advancedMode) {
-                advDialog.showDialog();
-                if(advDialog.wasCanceled()) return;
-                cellDiam = (int) advDialog.getNextNumber();
-                flowTresh = advDialog.getNextNumber();
-                cellProb = advDialog.getNextNumber();
-                minSize = (int) advDialog.getNextNumber();
-            }
+            if (advancedMode) advDialog.showDialog();
+            if (advDialog.wasCanceled()) return;
+            int cellDiam = advancedMode ? (int) advDialog.getNextNumber() : 0;
+            double flowThresh = advancedMode ? advDialog.getNextNumber() : 0.0;
+            double cellProb = advancedMode ? advDialog.getNextNumber() : 0.0;
+            int minSize = advancedMode ? (int) advDialog.getNextNumber() : 15;
 
             // Build the environment once for the whole batch.
             IJ.showStatus("Cellpose: preparing environment (first run may take minutes)…");
@@ -236,7 +230,7 @@ res[:] = masks.astype("int32")
                         inputs.put("use_gpu", useGpu);
                         inputs.put("custom_model", model);
                         inputs.put("cell_diam", cellDiam);
-                        inputs.put("flow_thresh", flowTresh);
+                        inputs.put("flow_thresh", flowThresh);
                         inputs.put("cell_proba", cellProb);
                         inputs.put("min_cell_size", minSize);
 
