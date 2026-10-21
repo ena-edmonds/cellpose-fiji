@@ -12,15 +12,15 @@ import loci.plugins.BF;
 import loci.plugins.in.ImporterOptions;
 import loci.common.DebugTools;
 
-@Plugin(type = Command.class, menuPath = "Process>Batch Flatten Stacks")
+@Plugin(type = Command.class, menuPath = "Process>Batch>Flatten Stacks")
 public class ConvertCzi implements Command {
     @Override
     public void run() {
         DebugTools.setRootLevel("ERROR"); // make the console not get spammed with a bunch of warnings
 
         DirectoryChooser dc = new DirectoryChooser("Choose a folder of czi files to convert");
-        File directory = new File(dc.getDirectory());
         if (dc.getDirectory() == null) return; // canceled
+        File directory = new File(dc.getDirectory());
         for(File czi : directory.listFiles()) {
             // if the file is a CZI and the equivalent projection .png doesn't exist, process it
             if(isCzi(czi) && !(new File(directory, czi.getName().replaceAll(".czi", "_MAX.png")).exists())) try {
