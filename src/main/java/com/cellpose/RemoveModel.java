@@ -26,9 +26,9 @@ import java.util.Map;
  * UI auto-inserts a separator before this destructive action.
  */
 @Plugin(type = Command.class, menu = {
-    @Menu(label = MenuConstants.ANALYZE_LABEL,
-          weight = MenuConstants.ANALYZE_WEIGHT,
-          mnemonic = MenuConstants.ANALYZE_MNEMONIC),
+    @Menu(label = MenuConstants.PROCESS_LABEL,
+          weight = MenuConstants.PROCESS_WEIGHT,
+          mnemonic = MenuConstants.PROCESS_MNEMONIC),
     @Menu(label = "Cellpose", weight = 100, mnemonic = 'c'),
     @Menu(label = "Remove Model", weight = 10, mnemonic = 'r')
 })

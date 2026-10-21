@@ -37,9 +37,9 @@ import java.util.Map;
  * (1 = top of the Cellpose submenu).
  */
 @Plugin(type = Command.class, menu = {
-    @Menu(label = MenuConstants.ANALYZE_LABEL,
-          weight = MenuConstants.ANALYZE_WEIGHT,
-          mnemonic = MenuConstants.ANALYZE_MNEMONIC),
+    @Menu(label = MenuConstants.PROCESS_LABEL,
+          weight = MenuConstants.PROCESS_WEIGHT,
+          mnemonic = MenuConstants.PROCESS_MNEMONIC),
     @Menu(label = "Cellpose", weight = 100, mnemonic = 'c'),
     @Menu(label = "Segment Image", weight = 1, mnemonic = 's')
 })

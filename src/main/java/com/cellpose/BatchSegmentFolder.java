@@ -50,9 +50,9 @@ import java.util.Map;
  * same logic as {@link SegmentImage}) and handed to the worker one at a time.
  */
 @Plugin(type = Command.class, menu = {
-    @Menu(label = MenuConstants.ANALYZE_LABEL,
-          weight = MenuConstants.ANALYZE_WEIGHT,
-          mnemonic = MenuConstants.ANALYZE_MNEMONIC),
+    @Menu(label = MenuConstants.PROCESS_LABEL,
+          weight = MenuConstants.PROCESS_WEIGHT,
+          mnemonic = MenuConstants.PROCESS_MNEMONIC),
     @Menu(label = "Cellpose", weight = 100, mnemonic = 'c'),
     @Menu(label = "Batch Segment Folder", weight = 2, mnemonic = 'b')
 })
