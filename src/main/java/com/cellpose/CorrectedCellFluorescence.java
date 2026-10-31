@@ -25,15 +25,15 @@ import java.util.*;
  * generated background band offset from the merged NMJ outline. Bright
  * obstructions in the band are rejected as outliers before averaging.
  */
-@Plugin(type = Command.class, menuPath = "Process>Get ROIs CTCF")
+@Plugin(type = Command.class, menuPath = "Process>Calculate Fluorescence...")
 public class CorrectedCellFluorescence implements Command {
 
-    private static final int GAP = 5;            // px between NMJ edge and band
-    private static final int THICKNESS = 15;     // px width of background band
-    private static final double REJECT_SD = 3;   // outlier cutoff in robust SDs
-    private static final double WARN_PCT = 50;   // log a warning below this % of band used
-    private static final boolean HIDE_BAND = true; // keep band in ROI Manager but draw it invisible
-    private static final String BG_PREFIX = "bg";
+    static final int GAP = 5;             // px between NMJ edge and band
+    static final int THICKNESS = 15;      // px width of background band
+    static final double REJECT_SD = 3;    // outlier cutoff in robust SDs
+    static final double WARN_PCT = 50;    // log a warning below this % of band used
+    static final boolean HIDE_BAND = true; // keep band in ROI Manager but draw it invisible
+    static final String BG_PREFIX = "bg";
 
     @Override
     public void run() {
@@ -57,49 +57,76 @@ public class CorrectedCellFluorescence implements Command {
             }
         }
 
-        // Collect area ROIs (skip lines/points and background ROIs)
-        List<Roi> cells = new ArrayList<>();
-        for (Roi r : rm.getRoisAsArray()) {
-            String name = r.getName();
-            if (r.isArea() && (name == null || !name.startsWith(BG_PREFIX))) {
-                cells.add(r);
-            }
-        }
+        List<Roi> cells = cellRois(rm.getRoisAsArray());
         if (cells.isEmpty()) {
             IJ.error("CTCF", "No area ROIs found.");
             return;
         }
 
+        ShapeRoi band = makeBand(cells, imp);
+        if (HIDE_BAND) band.setStrokeColor(new Color(0, 0, 0, 0));
+        rm.addRoi(band);
+
+        ResultsTable rt = measure(imp, cells, band);
+
+        // Leave the image with no active selection
+        imp.deleteRoi();
+        rm.deselect();
+
+        if (rt == null) {
+            IJ.error("CTCF", "Background band is empty (NMJ may fill the image).");
+            return;
+        }
+        rt.show("CTCF Results");
+    }
+
+    /** Area ROIs that are not background ROIs. */
+    static List<Roi> cellRois(Roi[] rois) {
+        List<Roi> cells = new ArrayList<>();
+        for (Roi r : rois) {
+            String name = r.getName();
+            if (r.isArea() && (name == null || !name.startsWith(BG_PREFIX))) {
+                cells.add(r);
+            }
+        }
+        return cells;
+    }
+
+    /**
+     * Merges all cell ROIs into one NMJ outline and returns a ring THICKNESS px
+     * wide starting GAP px outside it, clipped to the image bounds.
+     */
+    static ShapeRoi makeBand(List<Roi> cells, ImagePlus imp) {
         // 1. Merge copies of all ROIs into one overall NMJ ROI
         ShapeRoi merged = new ShapeRoi(cells.get(0));
         for (int i = 1; i < cells.size(); i++) {
             merged.or(new ShapeRoi(cells.get(i)));
         }
 
-        // 2. Background = ring THICKNESS px wide, starting GAP px
-        //    outside the merged ROI, clipped to the image bounds
+        // 2. Ring around the merged ROI; the merged ROI itself is discarded
         Roi inner = RoiEnlarger.enlarge(merged, GAP);
         Roi outer = RoiEnlarger.enlarge(merged, GAP + THICKNESS);
         ShapeRoi band = new ShapeRoi(outer).not(new ShapeRoi(inner));
         band.and(new ShapeRoi(new Roi(0, 0, imp.getWidth(), imp.getHeight())));
         band.setName(BG_PREFIX + "_band");
-        if (HIDE_BAND) band.setStrokeColor(new Color(0, 0, 0, 0));
-        rm.addRoi(band);
+        return band;
+    }
 
-        // 3. Background mean from the band with bright obstructions rejected
+    /**
+     * CTCF for each cell ROI using the outlier-rejected band mean as background.
+     * Measures the image's current channel/slice. Returns null if the band is empty.
+     */
+    static ResultsTable measure(ImagePlus imp, List<Roi> cells, ShapeRoi band) {
         double[] bg = robustBackground(imp.getProcessor(), band);
         double bgMean = bg[0];
-        double bgPctUsed = bg[2] > 0 ? 100.0 * bg[1] / bg[2] : 0;
-        if (Double.isNaN(bgMean)) {
-            IJ.error("CTCF", "Background band is empty (NMJ may fill the image).");
-            return;
-        }
+        if (Double.isNaN(bgMean)) return null;
+
+        double bgPctUsed = 100.0 * bg[1] / bg[2];
         if (bgPctUsed < WARN_PCT) {
             IJ.log(imp.getTitle() + ": only " + IJ.d2s(bgPctUsed, 1)
                     + "% of background band used - check for obstructions");
         }
 
-        // 4. CTCF for each ROI using the robust background mean
         int opts = Measurements.AREA | Measurements.MEAN;
         ResultsTable rt = new ResultsTable();
         for (int i = 0; i < cells.size(); i++) {
@@ -112,17 +139,14 @@ public class CorrectedCellFluorescence implements Command {
             rt.incrementCounter();
             rt.addValue("ROI", name);
             rt.addValue("Area (px)", s.area);
-            rt.addValue("Mean", s.mean);
+            //rt.addValue("Mean", s.mean);
             //rt.addValue("IntDen", intDen);
             //rt.addValue("BG Mean", bgMean);
             //rt.addValue("BG % used", bgPctUsed);
             rt.addValue("CTCF", intDen - s.area * bgMean);
         }
-
-        // Leave the image with no active selection
         imp.deleteRoi();
-        rm.deselect();
-        rt.show("CTCF Results");
+        return rt;
     }
 
     /**
@@ -130,7 +154,7 @@ public class CorrectedCellFluorescence implements Command {
      * (> REJECT_SD robust SDs from the median).
      * Returns {mean, pixelsUsed, pixelsTotal}.
      */
-    private static double[] robustBackground(ImageProcessor ip, Roi roi) {
+    static double[] robustBackground(ImageProcessor ip, Roi roi) {
         Rectangle b = roi.getBounds();
         ImageProcessor mask = roi.getMask();
         double[] vals = new double[b.width * b.height];
