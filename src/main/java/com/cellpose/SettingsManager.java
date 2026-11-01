@@ -10,6 +10,7 @@ public class SettingsManager {
     private boolean showGpu;
     private boolean useGpu;
     private String model;
+    private boolean canceled;
 
     private int cell_diameter;
     private int min_cell_size;
@@ -26,6 +27,7 @@ public class SettingsManager {
     }
 
     public void collectSettings() {
+        canceled = false;
         try {
             // Find the text file Cellpose uses to track imported custom models
             File modelsList = new File(System.getProperty("user.home"), ".cellpose/models/gui_models.txt");
@@ -48,7 +50,7 @@ public class SettingsManager {
             gd.addCheckbox("Advanced mode", false);
 
             gd.showDialog();
-            if (gd.wasCanceled()) return;
+            if (gd.wasCanceled()) {canceled = true; return;}
 
             model = gd.getNextChoice();
             if (model.equals("untrained")) model = "cpsam_v2";
@@ -72,7 +74,7 @@ public class SettingsManager {
         advDialog.addNumericField("Min ROI size (px)", 15);
         
         advDialog.showDialog();
-        if (advDialog.wasCanceled()) return;
+        if (advDialog.wasCanceled()) {canceled = true; return;}
 
         // Reassign params affected by advanced settings
         cell_diameter = (int) advDialog.getNextNumber();
@@ -82,10 +84,16 @@ public class SettingsManager {
     }
 
     // getters for the various parameters
-    public String getModel() {return model;}
-    public int getCellDiameter() {return cell_diameter;}
-    public int getMinSize() {return min_cell_size;}
-    public double getCellProbThreshold() {return cellprob_threshold;}
-    public double getFlowThreshold() {return flow_threshold;}
-    public boolean getGpuChoice() {return useGpu;}
+    public boolean wasCanceled() {return canceled;}
+
+    public Map<String, Object> getChoices() {
+        Map<String, Object> settings = new HashMap<>();
+        settings.put("use_gpu", useGpu);
+        settings.put("custom_model", model);
+        settings.put("cell_diam", cell_diameter);
+        settings.put("flow_thresh", flow_threshold);
+        settings.put("cell_prob", cellprob_threshold);
+        settings.put("min_cell_size", min_cell_size);
+        return settings;
+    }
 }

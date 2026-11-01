@@ -1,9 +1,9 @@
 package com.cellpose;
 
+import java.util.*;
 import org.apposed.appose.Appose;
 import org.apposed.appose.Environment;
-
-//import java.util.Locale;
+import org.apposed.appose.Service;
 
 /**
  * Shared Cellpose/Appose environment builder, with real GPU support.
@@ -39,10 +39,6 @@ import org.apposed.appose.Environment;
 public final class CellposeEnv {
 
     private CellposeEnv() {}
-
-    // private static boolean isMac() {
-    //     return System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("mac");
-    // }
 
     /**
      * A single pixi.toml covering all platforms. Torch/torchvision are pinned to the
@@ -86,14 +82,78 @@ torch = ">=2.6"
 torchvision = "*"
 """;
 
+    // .init imports numpy/torch/cellpose at worker startup. Appose warns that
+    // importing numpy in a task on Windows hangs (appose #23); the init script is
+    // the sanctioned fix. Must be valid Python with real newlines (a text block).
+    private static final String INIT_SCRIPT = """
+import numpy
+import torch
+try:
+    torch.cuda.is_available()
+except Exception:
+    pass
+from cellpose import models
+""";
+
+    // --- Python: emits stage updates via task.update(...) ---
+    // Device selection respects the "Use GPU" checkbox. numpy/torch/cellpose are
+    // imported in the .init script at worker startup — importing them in-task hangs
+    // the worker on Windows (Appose #23), so they must be pre-imported.
+    private static final String WORKER = """
+import numpy as np
+import torch
+from cellpose import models
+
+task.update("Loading model", current=1, maximum=3)
+
+cuda_ok = torch.cuda.is_available()
+mps_ok = getattr(torch.backends, "mps", None) is not None and torch.backends.mps.is_available()
+task.outputs["gpu_available"] = bool(cuda_ok or mps_ok)
+
+if use_gpu and cuda_ok:
+    device = torch.device("cuda")
+elif use_gpu and mps_ok:
+    device = torch.device("mps")
+else:
+    device = torch.device("cpu")
+
+img = image.ndarray()
+
+if img.shape[0] == 1:
+    img = img[0]
+    ch_axis = None
+else:
+    ch_axis = 0
+
+if cell_diam == 0:
+    dia = None
+else:
+    dia = cell_diam
+
+gpu = device.type != "cpu"
+model = models.CellposeModel(gpu=gpu, device=device, pretrained_model=custom_model)
+
+task.update("Segmenting (" + device.type + ")", current=2, maximum=3)
+masks, flows, styles = model.eval(img, channel_axis=ch_axis, flow_threshold=flow_thresh, diameter=dia, min_size=min_cell_size, cellprob_threshold=cell_prob)
+
+task.update("Writing masks", current=3, maximum=3)
+res = mask.ndarray()
+res[:] = masks.astype("int32")
+""";
+
     public static Environment build() throws Exception {
         return Appose.pixi()
             .content(PIXI_TOML)
-            // PYTHONUNBUFFERED=1: on Windows the worker's stdout is block-buffered as a
-            // pipe; without this the COMPLETION response never flushes and task.waitFor()
-            // hangs even though the script finished.
             .env("PYTHONUNBUFFERED", "1")
             .name("cellpose-fiji")
             .build();
+    }
+
+    public static Service init() throws Exception {
+        return build().python().init(INIT_SCRIPT);
+    }
+
+    public static Service.Task run(Service python, Map<String, Object> inputs) {
+        return python.task(WORKER, inputs);
     }
 }

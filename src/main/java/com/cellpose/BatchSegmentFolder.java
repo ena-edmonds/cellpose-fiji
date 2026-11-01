@@ -1,21 +1,12 @@
 package com.cellpose;
 
-import org.apposed.appose.Environment;
 import org.apposed.appose.Service;
 import org.apposed.appose.NDArray;
-import org.apposed.appose.NDArray.DType;
-import org.apposed.appose.NDArray.Shape;
-import org.apposed.appose.NDArray.Shape.Order;
 
 import ij.IJ;
 import ij.ImagePlus;
-import ij.ImageStack;
-import ij.gui.Roi;
+
 import ij.io.DirectoryChooser;
-import ij.process.ColorProcessor;
-import ij.process.FloatProcessor;
-import ij.process.ImageProcessor;
-import ij.plugin.filter.ThresholdToSelection;
 import ij.plugin.frame.RoiManager;
 
 import org.scijava.command.Command;
@@ -24,13 +15,7 @@ import org.scijava.plugin.Menu;
 import org.scijava.menu.MenuConstants;
 
 import java.io.File;
-import java.nio.FloatBuffer;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
+import java.util.*;
 
 /**
  * Batch Cellpose segmentation over a folder of images.
@@ -57,137 +42,67 @@ import java.util.Map;
 })
 public class BatchSegmentFolder implements Command {
 
-    private static final List<String> IMAGE_EXTENSIONS =
-        Arrays.asList(".tif", ".tiff", ".png", ".jpg", ".jpeg");
-
-    // Imported at worker startup via Service.init: importing numpy/torch/cellpose in a
-    // task on Windows hangs the worker (Appose #23), so pre-import them here.
-    private static final String INIT_SCRIPT = """
-import numpy
-import torch
-try:
-    torch.cuda.is_available()
-except Exception:
-    pass
-from cellpose import models
-""";
-
-    // Per-image worker: reads the (c,h,w) float32 input, writes an (h,w) int32
-    // mask into the preallocated output, reports the device once via gpu_available.
-    private static final String WORKER = """
-import numpy as np
-import torch
-from cellpose import models
-
-cuda_ok = torch.cuda.is_available()
-mps_ok = getattr(torch.backends, "mps", None) is not None and torch.backends.mps.is_available()
-task.outputs["gpu_available"] = bool(cuda_ok or mps_ok)
-
-if use_gpu and cuda_ok:
-    device = torch.device("cuda")
-elif use_gpu and mps_ok:
-    device = torch.device("mps")
-else:
-    device = torch.device("cpu")
-
-img = image.ndarray()
-if img.shape[0] == 1:
-    img = img[0]
-    ch_axis = None
-else:
-    ch_axis = 0
-
-if cell_diam == 0:
-    dia = None
-else:
-    dia = cell_diam
-
-gpu = device.type != "cpu"
-model = models.CellposeModel(gpu=gpu, device=device, pretrained_model=custom_model)
-masks, flows, styles = model.eval(img, channel_axis=ch_axis, flow_threshold=flow_thresh, diameter=dia, min_size=min_cell_size, cellprob_threshold=cell_prob)
-
-res = mask.ndarray()
-res[:] = masks.astype("int32")
-""";
+    private static final List<String> IMAGE_EXTENSIONS = Arrays.asList(".tif", ".tiff", ".png", ".jpg", ".jpeg");
 
     @Override
     public void run() {
         try {
-            // Pick the folder.
+            // Pick the folder
             DirectoryChooser dc = new DirectoryChooser("Choose a folder of images to segment");
             String dirPath = dc.getDirectory();
-            if (dirPath == null) return; // canceled
+            if(dirPath == null) return; // canceled
             File dir = new File(dirPath);
 
-            // Gather top-level images with a standard extension.
+            // Gather images in selected folder (no sub-folders) with valid extensions
             File[] all = dir.listFiles();
             List<File> images = new ArrayList<>();
-            if (all != null) {
-                for (File f : all) {
-                    if (f.isFile() && hasImageExtension(f.getName())) images.add(f);
-                }
+            if(all != null) {
+                for(File f : all) if(f.isFile() && hasImageExtension(f.getName())) images.add(f);
             }
-            if (images.isEmpty()) {
+            if(images.isEmpty()) {
                 IJ.showMessage("Batch Segment", "No images (.tif/.tiff/.png/.jpg) found in:\n" + dirPath);
                 return;
             }
 
+            // Get run settings from user
             SettingsManager settings = new SettingsManager();
-            settings.collectSettings(); // show dialogue to get run params from user
+            settings.collectSettings();
+            if(settings.wasCanceled()) return;
 
-            // Build the environment once for the whole batch.
-            IJ.showStatus("Cellpose: preparing environment (first run may take minutes)…");
-            IJ.showProgress(0.0);
-            Environment env = CellposeEnv.build();
-
+            // Set up variables for tracking progress and final output
             int total = images.size();
             int processed = 0, skipped = 0, failed = 0;
             boolean recordedAvailability = false;
-            // CSV rows: "image name, roi count, mean roi size (px)" for each processed image.
-            List<String> summaryRows = new ArrayList<>();
+            List<String> summaryRows = new ArrayList<>(); // "image name, roi count, mean roi size (px)" for each image
 
-            // One worker process for the whole batch.
-            try (Service python = env.python().init(INIT_SCRIPT)) {
+            // Try building and initializing the environment
+            IJ.showStatus("Cellpose: preparing environment (first run may take minutes)…");
+            IJ.showProgress(0.0);
+            try (Service python = CellposeEnv.init()) {
                 for (int idx = 0; idx < total; idx++) {
                     File imgFile = images.get(idx);
-                    String base = stripExtension(imgFile.getName());
-                    File roiZip = new File(dir, base + "_Rois.zip");
-                    File maskTif = new File(dir, base + "_masks.tif");
+                    File roiZip = new File(dir, stripExtension(imgFile.getName()) + "_Rois.zip");
 
                     IJ.showStatus("Cellpose batch: " + (idx + 1) + "/" + total + " — " + imgFile.getName());
                     IJ.showProgress((double) idx / total);
 
-                    if (roiZip.exists()) { skipped++; continue; }
+                    if(roiZip.exists()) { skipped++; continue; }
 
                     ImagePlus imp = IJ.openImage(imgFile.getAbsolutePath());
                     if (imp == null) { failed++; IJ.log("Cellpose batch: could not open " + imgFile.getName()); continue; }
 
                     try {
-                        int w = imp.getWidth(), h = imp.getHeight();
-                        int n = w * h;
-                        List<float[]> planes = extractChannels(imp, n);
-                        int c = Math.min(planes.size(), 3);
-                        if (c < 1) { failed++; IJ.log("Cellpose batch: no image data in " + imgFile.getName()); continue; }
-
-                        Shape inShape = new Shape(Order.C_ORDER, c, h, w);
-                        NDArray ndImg = new NDArray(DType.FLOAT32, inShape);
-                        FloatBuffer fb = ndImg.buffer().asFloatBuffer();
-                        for (int k = 0; k < c; k++) fb.put(planes.get(k), 0, n);
-
-                        Shape outShape = new Shape(Order.C_ORDER, h, w);
-                        NDArray ndMask = new NDArray(DType.INT32, outShape);
+                        ProcessImage processor = new ProcessImage(imp);
+                        NDArray ndImg = processor.getNdImg();
+                        NDArray ndMask = processor.getNdMask();
+                        if (ndImg == null) { failed++; IJ.log("Cellpose batch: no image data in " + imgFile.getName()); continue; }
 
                         Map<String, Object> inputs = new HashMap<>();
                         inputs.put("image", ndImg);
                         inputs.put("mask", ndMask);
-                        inputs.put("use_gpu", settings.getGpuChoice());
-                        inputs.put("custom_model", settings.getModel());
-                        inputs.put("cell_diam", settings.getCellDiameter());
-                        inputs.put("flow_thresh", settings.getFlowThreshold());
-                        inputs.put("cell_prob", settings.getCellProbThreshold());
-                        inputs.put("min_cell_size", settings.getMinSize());
+                        inputs.putAll(settings.getChoices());
 
-                        Service.Task task = python.task(WORKER, inputs);
+                        Service.Task task = CellposeEnv.run(python, inputs); // segment the image!
                         task.waitFor();
 
                         // Cache GPU availability once per batch (same on every image).
@@ -200,11 +115,8 @@ res[:] = masks.astype("int32")
                         }
 
                         // Build the label image and save mask + ROIs.
-                        int[] maskInts = new int[n];
-                        ndMask.buffer().asIntBuffer().get(maskInts);
-                        FloatProcessor fp = new FloatProcessor(w, h);
-                        for (int i = 0; i < n; i++) fp.setf(i, (float) maskInts[i]);
-                        ImagePlus labelImp = new ImagePlus(base + "_masks", fp);
+                        processor.readMask(ndMask);
+                        ImagePlus labelImp = processor.getLabelImp();
 
                         ndImg.close();
                         ndMask.close();
@@ -213,9 +125,9 @@ res[:] = masks.astype("int32")
                         // ROI count = number of distinct nonzero labels present;
                         // mean size = mean pixel count over those labels.
                         int maxLabel = 0;
-                        for (int v : maskInts) if (v > maxLabel) maxLabel = v;
+                        for (int v : processor.getMaskInts()) if (v > maxLabel) maxLabel = v;
                         long[] pixelsPerLabel = new long[maxLabel + 1];
-                        for (int v : maskInts) if (v > 0) pixelsPerLabel[v]++;
+                        for (int v : processor.getMaskInts()) if (v > 0) pixelsPerLabel[v]++;
                         int roiCount = 0;
                         long totalLabeledPixels = 0;
                         for (int label = 1; label <= maxLabel; label++) {
@@ -225,14 +137,10 @@ res[:] = masks.astype("int32")
                             }
                         }
                         double meanSizePx = roiCount > 0 ? (double) totalLabeledPixels / roiCount : 0.0;
-                        summaryRows.add(String.format(Locale.ROOT, "%s,%d,%.2f",
-                            csvField(imgFile.getName()), roiCount, meanSizePx));
-
-                        // Save the label mask as TIFF.
-                        IJ.saveAsTiff(labelImp, maskTif.getAbsolutePath());
+                        summaryRows.add(String.format(Locale.ROOT, "%s,%d,%.2f", csvField(imgFile.getName()), roiCount, meanSizePx));
 
                         // Derive ROIs and save as a RoiSet .zip.
-                        RoiManager rm = deriveRois(labelImp);
+                        RoiManager rm = ProcessImage.deriveRois(labelImp, true);
                         if (rm != null && rm.getCount() > 0) {
                             rm.runCommand("Save", roiZip.getAbsolutePath());
                             rm.reset();
@@ -267,7 +175,7 @@ res[:] = masks.astype("int32")
         }
     }
 
-    // ============================ helpers ============================
+    // helper functions for batch mode
 
     /** Quote a CSV field if it contains a comma, quote, or newline. */
     private static String csvField(String s) {
@@ -286,44 +194,5 @@ res[:] = masks.astype("int32")
     private static String stripExtension(String name) {
         int dot = name.lastIndexOf('.');
         return dot > 0 ? name.substring(0, dot) : name;
-    }
-
-    private List<float[]> extractChannels(ImagePlus imp, int n) {
-        List<float[]> planes = new ArrayList<>();
-        if (imp.getType() == ImagePlus.COLOR_RGB) {
-            ColorProcessor cp = (ColorProcessor) imp.getProcessor();
-            byte[] r = new byte[n], g = new byte[n], b = new byte[n];
-            cp.getRGB(r, g, b);
-            planes.add(toFloat(r)); planes.add(toFloat(g)); planes.add(toFloat(b));
-        } else {
-            ImageStack st = imp.getStack();
-            for (int i = 1; i <= st.getSize(); i++)
-                planes.add((float[]) st.getProcessor(i).convertToFloat().getPixels());
-        }
-        return planes;
-    }
-
-    private float[] toFloat(byte[] arr) {
-        float[] out = new float[arr.length];
-        for (int i = 0; i < arr.length; i++) out[i] = (float)(arr[i] & 0xFF);
-        return out;
-    }
-
-    // Convert a label image into named ROIs in a (hidden) RoiManager.
-    private RoiManager deriveRois(ImagePlus labelImp) {
-        ImageProcessor ip = labelImp.getProcessor();
-        int max = (int) ip.getMax();
-        if (max < 1) return null;
-        RoiManager rm = RoiManager.getInstance();
-        if (rm == null) rm = new RoiManager(false); // false = don't show the window during batch
-        rm.reset();
-        ThresholdToSelection tts = new ThresholdToSelection();
-        for (int label = 1; label <= max; label++) {
-            ip.setThreshold(label, label, ImageProcessor.NO_LUT_UPDATE);
-            Roi roi = tts.convert(ip);
-            if (roi != null) { roi.setName("Cell_" + label); rm.addRoi(roi); }
-        }
-        ip.resetThreshold();
-        return rm;
     }
 }
