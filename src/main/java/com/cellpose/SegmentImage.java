@@ -11,7 +11,6 @@ import ij.IJ;
 import ij.ImagePlus;
 import ij.ImageStack;
 import ij.gui.Roi;
-import ij.gui.GenericDialog;
 import ij.process.ColorProcessor;
 import ij.process.FloatProcessor;
 import ij.process.ImageProcessor;
@@ -24,7 +23,6 @@ import org.scijava.plugin.Plugin;
 import org.scijava.plugin.Menu;
 import org.scijava.menu.MenuConstants;
 
-import java.io.File;
 import java.nio.FloatBuffer;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -51,55 +49,8 @@ public class SegmentImage implements Command {
     @Override
     public void run() {
         try {
-            // GUI for selecting model and whether or not to use the gpu for the model run
-            String home = System.getProperty("user.home");
-            File registry = new File(home, ".cellpose/models/gui_models.txt");
-            List<String> guiModels = new ArrayList<>();
-            guiModels.add("untrained");
-            // The registry may not exist on a fresh machine (created lazily by
-            // Cellpose / by Add Model). Treat a missing file as an empty list.
-            if (registry.exists()) {
-                for (String line : java.nio.file.Files.readAllLines(registry.toPath())) {
-                    String trimmed = line.trim();
-                    if (!trimmed.isEmpty()) guiModels.add(trimmed); // drop blank lines
-                }
-            }
-            String[] models = guiModels.toArray(new String[0]);
-
-            GenericDialog gd = new GenericDialog("Segment Image");
-            gd.addChoice("Model", models, models[0]); // label, options, default
-
-            // Show the "Use GPU" checkbox unless we already know this machine has no
-            // usable GPU. Default it on when a GPU is known available (or to the user's
-            // remembered choice); see GpuSupport for the caching rules.
-            boolean showGpuBox = GpuSupport.shouldShowCheckbox();
-            if (showGpuBox) gd.addCheckbox("Use GPU", GpuSupport.defaultChecked());
-            gd.addCheckbox("Advanced mode", false);
-            gd.showDialog();
-            if (gd.wasCanceled()) return;
-
-            String model = gd.getNextChoice();
-            if ("untrained".equals(model)) model = "cpsam_v2";
-            // If the box was hidden (no GPU), force CPU. Otherwise use + remember choice.
-            boolean useGpu = false;
-            if (showGpuBox) {
-                useGpu = gd.getNextBoolean();
-                GpuSupport.recordChoice(useGpu);
-            }
-
-            // Advanced mode settings
-            boolean advancedMode = gd.getNextBoolean();
-            GenericDialog advDialog = new GenericDialog("Advanced Settings");
-            advDialog.addNumericField("Cell diameter (px)", 0);
-            advDialog.addSlider("Flow threshold", 0.0, 3.0, 0.0, 0.1);
-            advDialog.addSlider("Cellprob threshold", -6.0, 6.0, 0.0, 0.1);
-            advDialog.addNumericField("Min ROI size (px)", 15);
-            if (advancedMode) advDialog.showDialog();
-            if (advDialog.wasCanceled()) return;
-            int cellDiam = advancedMode ? (int) advDialog.getNextNumber() : 0;
-            double flowThresh = advancedMode ? advDialog.getNextNumber() : 0.0;
-            double cellProb = advancedMode ? advDialog.getNextNumber() : 0.0;
-            int minSize = advancedMode ? (int) advDialog.getNextNumber() : 15;
+            SettingsManager settings = new SettingsManager();
+            settings.collectSettings(); // show dialogue to get run params from user
             
             // start prepping image for the run
             int w = imp.getWidth(), h = imp.getHeight();
@@ -167,7 +118,7 @@ gpu = device.type != "cpu"
 model = models.CellposeModel(gpu=gpu, device=device, pretrained_model=custom_model)
 
 task.update("Segmenting (" + device.type + ")", current=2, maximum=3)
-masks, flows, styles = model.eval(img, channel_axis=ch_axis, flow_threshold=flow_thresh, diameter=dia, min_size=min_cell_size, cellprob_threshold=cell_proba)
+masks, flows, styles = model.eval(img, channel_axis=ch_axis, flow_threshold=flow_thresh, diameter=dia, min_size=min_cell_size, cellprob_threshold=cell_prob)
 
 task.update("Writing masks", current=3, maximum=3)
 res = mask.ndarray()
@@ -193,12 +144,12 @@ from cellpose import models
                 Map<String, Object> inputs = new HashMap<>();
                 inputs.put("image", ndImg);
                 inputs.put("mask", ndMask);
-                inputs.put("use_gpu", useGpu);
-                inputs.put("custom_model", model);
-                inputs.put("cell_diam", cellDiam);
-                inputs.put("flow_thresh", flowThresh);
-                inputs.put("cell_proba", cellProb);
-                inputs.put("min_cell_size", minSize);
+                inputs.put("use_gpu", settings.getGpuChoice());
+                inputs.put("custom_model", settings.getModel());
+                inputs.put("cell_diam", settings.getCellDiameter());
+                inputs.put("flow_thresh", settings.getFlowThreshold());
+                inputs.put("cell_prob", settings.getCellProbThreshold());
+                inputs.put("min_cell_size", settings.getMinSize());
                 Service.Task task = python.task(script, inputs);
                 // Forward worker stage updates to the Fiji status bar
                 task.listen(e -> {

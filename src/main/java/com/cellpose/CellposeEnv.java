@@ -3,7 +3,7 @@ package com.cellpose;
 import org.apposed.appose.Appose;
 import org.apposed.appose.Environment;
 
-import java.util.Locale;
+//import java.util.Locale;
 
 /**
  * Shared Cellpose/Appose environment builder, with real GPU support.
@@ -40,9 +40,9 @@ public final class CellposeEnv {
 
     private CellposeEnv() {}
 
-    private static boolean isMac() {
-        return System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("mac");
-    }
+    // private static boolean isMac() {
+    //     return System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("mac");
+    // }
 
     /**
      * A single pixi.toml covering all platforms. Torch/torchvision are pinned to the

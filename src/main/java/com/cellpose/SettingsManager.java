@@ -1,0 +1,91 @@
+package com.cellpose;
+
+import java.io.*;
+import java.util.*;
+import ij.IJ;
+import ij.gui.GenericDialog;
+
+
+public class SettingsManager {
+    private boolean showGpu;
+    private boolean useGpu;
+    private String model;
+
+    private int cell_diameter;
+    private int min_cell_size;
+    private double cellprob_threshold;
+    private double flow_threshold;
+
+    public SettingsManager() {
+        cell_diameter = 0;
+        min_cell_size = 15;
+        cellprob_threshold = 0.0;
+        flow_threshold = 0.0;
+        showGpu = GpuSupport.shouldShowCheckbox();
+        useGpu = false;
+    }
+
+    public void collectSettings() {
+        try {
+            // Find the text file Cellpose uses to track imported custom models
+            File modelsList = new File(System.getProperty("user.home"), ".cellpose/models/gui_models.txt");
+            List<String> guiModels = new ArrayList<>();
+            guiModels.add("untrained"); // add an option for the default untrained cpsam model
+
+            // Cellpose might not have made the models list yet, treat it as an empty array if true
+            if (modelsList.exists()) {
+                for (String line : java.nio.file.Files.readAllLines(modelsList.toPath())) {
+                    String trimmed = line.trim();
+                    if (!trimmed.isEmpty()) guiModels.add(trimmed); // skip blank lines
+                }
+            }
+            String[] models = guiModels.toArray(new String[0]);
+
+            // Populate model run settings dialogue
+            GenericDialog gd = new GenericDialog("Segment Image");
+            gd.addChoice("Model", models, models[0]);
+            if (showGpu) gd.addCheckbox("Use GPU", GpuSupport.defaultChecked());
+            gd.addCheckbox("Advanced mode", false);
+
+            gd.showDialog();
+            if (gd.wasCanceled()) return;
+
+            model = gd.getNextChoice();
+            if (model.equals("untrained")) model = "cpsam_v2";
+            if (showGpu) {
+                useGpu = gd.getNextBoolean();
+                GpuSupport.recordChoice(useGpu);
+            }
+            if(gd.getNextBoolean()) collectAdvancedSettings();
+
+        } catch(Exception e) {
+            IJ.handleException(e);
+        }
+    }
+
+    public void collectAdvancedSettings() {
+        // Populate advanced settings dialogue with extra settings
+        GenericDialog advDialog = new GenericDialog("Advanced Settings");
+        advDialog.addNumericField("Cell diameter (px)", 0);
+        advDialog.addSlider("Flow threshold", 0.0, 3.0, 0.0, 0.1);
+        advDialog.addSlider("Cellprob threshold", -6.0, 6.0, 0.0, 0.1);
+        advDialog.addNumericField("Min ROI size (px)", 15);
+        
+        advDialog.showDialog();
+        if (advDialog.wasCanceled()) return;
+
+        // Reassign params affected by advanced settings
+        cell_diameter = (int) advDialog.getNextNumber();
+        flow_threshold = advDialog.getNextNumber();
+        cellprob_threshold = advDialog.getNextNumber();
+        min_cell_size = (int) advDialog.getNextNumber();
+    }
+
+    // getters for the various parameters
+    public String getModel() {return model;}
+    public int getCellDiameter() {return cell_diameter;}
+    public int getMinSize() {return min_cell_size;}
+    public double getCellProbThreshold() {return cellprob_threshold;}
+    public double getFlowThreshold() {return flow_threshold;}
+    public boolean getGpuChoice() {return useGpu;}
+}

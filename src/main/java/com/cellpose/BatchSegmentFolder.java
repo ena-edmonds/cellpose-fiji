@@ -11,10 +11,7 @@ import ij.IJ;
 import ij.ImagePlus;
 import ij.ImageStack;
 import ij.gui.Roi;
-import ij.gui.ShapeRoi;
-import ij.gui.GenericDialog;
 import ij.io.DirectoryChooser;
-import ij.measure.ResultsTable;
 import ij.process.ColorProcessor;
 import ij.process.FloatProcessor;
 import ij.process.ImageProcessor;
@@ -43,11 +40,9 @@ import java.util.Map;
  * <ul>
  *   <li>{@code {name}_Rois.zip} — an ImageJ RoiSet (reopens via the ROI Manager)</li>
  *   <li>{@code {name}_masks.tif} — the integer label image</li>
- *   <li>{@code {name}_CTCF.csv} — per-ROI CTCF (optional, see {@link CorrectedCellFluorescence})</li>
  * </ul>
  * Images whose {@code _Rois.zip} already exists are skipped, so the batch is
- * resumable. When CTCF is enabled, skipped images still get a CTCF CSV computed
- * from their existing {@code _Rois.zip}.
+ * resumable.
  *
  * <p>The Appose environment is built once and a single Python worker processes
  * the whole batch; images are opened and channel-extracted in Java (reusing the
@@ -109,7 +104,7 @@ else:
 
 gpu = device.type != "cpu"
 model = models.CellposeModel(gpu=gpu, device=device, pretrained_model=custom_model)
-masks, flows, styles = model.eval(img, channel_axis=ch_axis, flow_threshold=flow_thresh, diameter=dia, min_size=min_cell_size, cellprob_threshold=cell_proba)
+masks, flows, styles = model.eval(img, channel_axis=ch_axis, flow_threshold=flow_thresh, diameter=dia, min_size=min_cell_size, cellprob_threshold=cell_prob)
 
 res = mask.ndarray()
 res[:] = masks.astype("int32")
@@ -137,58 +132,8 @@ res[:] = masks.astype("int32")
                 return;
             }
 
-            // Model + GPU dialog, applied to the whole batch.
-            String home = System.getProperty("user.home");
-            File registry = new File(home, ".cellpose/models/gui_models.txt");
-            List<String> guiModels = new ArrayList<>();
-            guiModels.add("untrained");
-            // Registry may not exist on a fresh machine; treat missing as empty.
-            if (registry.exists()) {
-                for (String line : java.nio.file.Files.readAllLines(registry.toPath())) {
-                    String trimmed = line.trim();
-                    if (!trimmed.isEmpty()) guiModels.add(trimmed);
-                }
-            }
-            String[] models = guiModels.toArray(new String[0]);
-
-            GenericDialog gd = new GenericDialog("Batch Segment Folder");
-            gd.addMessage(images.size() + " image(s) found in:\n" + dirPath);
-            gd.addChoice("Model", models, models[0]);
-            boolean showGpuBox = GpuSupport.shouldShowCheckbox();
-            if (showGpuBox) gd.addCheckbox("Use GPU", GpuSupport.defaultChecked());
-            gd.addCheckbox("Skip images that already have _Rois.zip", true);
-            gd.addCheckbox("Write summary CSV (image, ROI count, mean size)", true);
-            gd.addCheckbox("Write per-image CTCF CSV ({name}_CTCF.csv)", false);
-            gd.addNumericField("CTCF channel", 1, 0);
-            gd.addCheckbox("Advanced mode", false);
-            gd.showDialog();
-            if (gd.wasCanceled()) return;
-
-            String model = gd.getNextChoice();
-            if ("untrained".equals(model)) model = "cpsam_v2";
-            boolean useGpu = false;
-            if (showGpuBox) {
-                useGpu = gd.getNextBoolean();
-                GpuSupport.recordChoice(useGpu);
-            }
-            boolean skipExisting = gd.getNextBoolean();
-            boolean writeCsv = gd.getNextBoolean();
-            boolean writeCtcf = gd.getNextBoolean();
-            int ctcfChannel = (int) gd.getNextNumber();
-
-            // Advanced mode settings
-            boolean advancedMode = gd.getNextBoolean();
-            GenericDialog advDialog = new GenericDialog("Advanced Settings");
-            advDialog.addNumericField("Cell diameter (px)", 0);
-            advDialog.addSlider("Flow threshold", 0.0, 3.0, 0.0, 0.1);
-            advDialog.addSlider("Cellprob threshold", -6.0, 6.0, 0.0, 0.1);
-            advDialog.addNumericField("Min ROI size (px)", 15);
-            if (advancedMode) advDialog.showDialog();
-            if (advDialog.wasCanceled()) return;
-            int cellDiam = advancedMode ? (int) advDialog.getNextNumber() : 0;
-            double flowThresh = advancedMode ? advDialog.getNextNumber() : 0.0;
-            double cellProb = advancedMode ? advDialog.getNextNumber() : 0.0;
-            int minSize = advancedMode ? (int) advDialog.getNextNumber() : 15;
+            SettingsManager settings = new SettingsManager();
+            settings.collectSettings(); // show dialogue to get run params from user
 
             // Build the environment once for the whole batch.
             IJ.showStatus("Cellpose: preparing environment (first run may take minutes)…");
@@ -197,7 +142,6 @@ res[:] = masks.astype("int32")
 
             int total = images.size();
             int processed = 0, skipped = 0, failed = 0;
-            int ctcfSaved = 0, ctcfFailed = 0;
             boolean recordedAvailability = false;
             // CSV rows: "image name, roi count, mean roi size (px)" for each processed image.
             List<String> summaryRows = new ArrayList<>();
@@ -209,20 +153,11 @@ res[:] = masks.astype("int32")
                     String base = stripExtension(imgFile.getName());
                     File roiZip = new File(dir, base + "_Rois.zip");
                     File maskTif = new File(dir, base + "_masks.tif");
-                    File ctcfCsv = new File(dir, base + "_CTCF.csv");
 
                     IJ.showStatus("Cellpose batch: " + (idx + 1) + "/" + total + " — " + imgFile.getName());
                     IJ.showProgress((double) idx / total);
 
-                    if (skipExisting && roiZip.exists()) {
-                        // Already segmented: still produce CTCF from the saved ROIs.
-                        if (writeCtcf) {
-                            if (ctcfFromExisting(imgFile, roiZip, ctcfChannel, ctcfCsv)) ctcfSaved++;
-                            else ctcfFailed++;
-                        }
-                        skipped++;
-                        continue;
-                    }
+                    if (roiZip.exists()) { skipped++; continue; }
 
                     ImagePlus imp = IJ.openImage(imgFile.getAbsolutePath());
                     if (imp == null) { failed++; IJ.log("Cellpose batch: could not open " + imgFile.getName()); continue; }
@@ -245,12 +180,12 @@ res[:] = masks.astype("int32")
                         Map<String, Object> inputs = new HashMap<>();
                         inputs.put("image", ndImg);
                         inputs.put("mask", ndMask);
-                        inputs.put("use_gpu", useGpu);
-                        inputs.put("custom_model", model);
-                        inputs.put("cell_diam", cellDiam);
-                        inputs.put("flow_thresh", flowThresh);
-                        inputs.put("cell_proba", cellProb);
-                        inputs.put("min_cell_size", minSize);
+                        inputs.put("use_gpu", settings.getGpuChoice());
+                        inputs.put("custom_model", settings.getModel());
+                        inputs.put("cell_diam", settings.getCellDiameter());
+                        inputs.put("flow_thresh", settings.getFlowThreshold());
+                        inputs.put("cell_prob", settings.getCellProbThreshold());
+                        inputs.put("min_cell_size", settings.getMinSize());
 
                         Service.Task task = python.task(WORKER, inputs);
                         task.waitFor();
@@ -277,23 +212,21 @@ res[:] = masks.astype("int32")
                         // Per-image stats, computed directly from the label array:
                         // ROI count = number of distinct nonzero labels present;
                         // mean size = mean pixel count over those labels.
-                        if (writeCsv) {
-                            int maxLabel = 0;
-                            for (int v : maskInts) if (v > maxLabel) maxLabel = v;
-                            long[] pixelsPerLabel = new long[maxLabel + 1];
-                            for (int v : maskInts) if (v > 0) pixelsPerLabel[v]++;
-                            int roiCount = 0;
-                            long totalLabeledPixels = 0;
-                            for (int label = 1; label <= maxLabel; label++) {
-                                if (pixelsPerLabel[label] > 0) {
-                                    roiCount++;
-                                    totalLabeledPixels += pixelsPerLabel[label];
-                                }
+                        int maxLabel = 0;
+                        for (int v : maskInts) if (v > maxLabel) maxLabel = v;
+                        long[] pixelsPerLabel = new long[maxLabel + 1];
+                        for (int v : maskInts) if (v > 0) pixelsPerLabel[v]++;
+                        int roiCount = 0;
+                        long totalLabeledPixels = 0;
+                        for (int label = 1; label <= maxLabel; label++) {
+                            if (pixelsPerLabel[label] > 0) {
+                                roiCount++;
+                                totalLabeledPixels += pixelsPerLabel[label];
                             }
-                            double meanSizePx = roiCount > 0 ? (double) totalLabeledPixels / roiCount : 0.0;
-                            summaryRows.add(String.format(Locale.ROOT, "%s,%d,%.2f",
-                                csvField(imgFile.getName()), roiCount, meanSizePx));
                         }
+                        double meanSizePx = roiCount > 0 ? (double) totalLabeledPixels / roiCount : 0.0;
+                        summaryRows.add(String.format(Locale.ROOT, "%s,%d,%.2f",
+                            csvField(imgFile.getName()), roiCount, meanSizePx));
 
                         // Save the label mask as TIFF.
                         IJ.saveAsTiff(labelImp, maskTif.getAbsolutePath());
@@ -302,15 +235,7 @@ res[:] = masks.astype("int32")
                         RoiManager rm = deriveRois(labelImp);
                         if (rm != null && rm.getCount() > 0) {
                             rm.runCommand("Save", roiZip.getAbsolutePath());
-                            // CTCF on the original image using the ROIs just derived.
-                            if (writeCtcf) {
-                                if (writeCtcfCsv(imp, rm.getRoisAsArray(), ctcfChannel, ctcfCsv)) ctcfSaved++;
-                                else ctcfFailed++;
-                            }
                             rm.reset();
-                        } else if (writeCtcf) {
-                            IJ.log("CTCF: no ROIs found in " + imgFile.getName() + ", no CSV written");
-                            ctcfFailed++;
                         }
                         processed++;
                     } finally {
@@ -323,7 +248,7 @@ res[:] = masks.astype("int32")
             IJ.showStatus("Cellpose batch: done");
 
             // Write one summary CSV for the whole batch.
-            if (writeCsv && !summaryRows.isEmpty()) {
+            if (!summaryRows.isEmpty()) {
                 File csv = new File(dir, "cellpose_batch_summary.csv");
                 StringBuilder sb = new StringBuilder();
                 sb.append("image,roi_count,mean_roi_size_px\n");
@@ -336,11 +261,6 @@ res[:] = masks.astype("int32")
             IJ.log(String.format(Locale.ROOT,
                 "Cellpose batch complete: %d processed, %d skipped, %d failed (of %d) in %s",
                 processed, skipped, failed, total, dirPath));
-            if (writeCtcf) {
-                IJ.log(String.format(Locale.ROOT,
-                    "CTCF: %d CSV(s) written, %d image(s) without CTCF (see log above)",
-                    ctcfSaved, ctcfFailed));
-            }
         } catch (Exception e) {
             IJ.showProgress(1.0);
             IJ.handleException(e);
@@ -348,73 +268,6 @@ res[:] = masks.astype("int32")
     }
 
     // ============================ helpers ============================
-
-    /**
-     * Runs CTCF (see {@link CorrectedCellFluorescence}) on one image and saves the
-     * result table as CSV. Channel is 1-based; for plain stacks, slices are treated
-     * as channels, matching {@link #extractChannels}. Returns false and logs on failure.
-     */
-    private static boolean writeCtcfCsv(ImagePlus imp, Roi[] rois, int channel, File csv) {
-        String name = imp.getTitle();
-        try {
-            if (imp.getNChannels() > 1) {
-                if (channel < 1 || channel > imp.getNChannels()) {
-                    IJ.log("CTCF: " + name + " has " + imp.getNChannels() + " channel(s), can't use channel " + channel);
-                    return false;
-                }
-                imp.setPosition(channel, 1, 1);
-            } else if (imp.getStackSize() > 1) {
-                if (channel < 1 || channel > imp.getStackSize()) {
-                    IJ.log("CTCF: " + name + " has " + imp.getStackSize() + " slice(s), can't use channel " + channel);
-                    return false;
-                }
-                imp.setSlice(channel);
-            } else if (channel != 1) {
-                IJ.log("CTCF: " + name + " has a single channel, can't use channel " + channel);
-                return false;
-            }
-
-            List<Roi> cells = CorrectedCellFluorescence.cellRois(rois);
-            if (cells.isEmpty()) {
-                IJ.log("CTCF: no area ROIs for " + name);
-                return false;
-            }
-            ShapeRoi band = CorrectedCellFluorescence.makeBand(cells, imp);
-            ResultsTable rt = CorrectedCellFluorescence.measure(imp, cells, band);
-            if (rt == null) {
-                IJ.log("CTCF: background band is empty for " + name);
-                return false;
-            }
-            if (!rt.save(csv.getAbsolutePath())) {
-                IJ.log("CTCF: failed to save " + csv.getName());
-                return false;
-            }
-            return true;
-        } catch (Exception e) {
-            IJ.log("CTCF: error on " + name + ": " + e);
-            return false;
-        }
-    }
-
-    /** CTCF for an already-segmented image, using its saved _Rois.zip. */
-    private boolean ctcfFromExisting(File imgFile, File roiZip, int channel, File csv) {
-        ImagePlus imp = IJ.openImage(imgFile.getAbsolutePath());
-        if (imp == null) {
-            IJ.log("CTCF: could not open " + imgFile.getName());
-            return false;
-        }
-        try {
-            RoiManager rm = RoiManager.getInstance();
-            if (rm == null) rm = new RoiManager(false); // false = don't show the window during batch
-            rm.reset();
-            rm.runCommand("Open", roiZip.getAbsolutePath());
-            Roi[] rois = rm.getRoisAsArray();
-            rm.reset();
-            return writeCtcfCsv(imp, rois, channel, csv);
-        } finally {
-            imp.close();
-        }
-    }
 
     /** Quote a CSV field if it contains a comma, quote, or newline. */
     private static String csvField(String s) {
