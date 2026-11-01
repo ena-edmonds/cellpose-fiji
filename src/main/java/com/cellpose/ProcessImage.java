@@ -76,13 +76,10 @@ public class ProcessImage {
         List<float[]> planes = extractChannels(imp, n);
         int c = Math.min(planes.size(), 3);
         if (c < 1) { return null; } // failed
-
         Shape inShape = new Shape(Order.C_ORDER, c, h, w);
         NDArray ndImg = new NDArray(DType.FLOAT32, inShape);
-
         FloatBuffer fb = ndImg.buffer().asFloatBuffer();
         for (int k = 0; k < c; k++) fb.put(planes.get(k), 0, n);
-
         return ndImg;
     }
 
