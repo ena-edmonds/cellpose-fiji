@@ -19,10 +19,10 @@ Advanced settings are also available, selecting "Advanced Mode" and clicking "Ok
 
 An entire folder of images can also be segmented at once. Select "Batch Segment Folder" from the "Process -> Cellpose" menus and select a folder of images with .png, .jpg. .tif, .tiff, or .jpeg extensions. The run will begin, any previously segmented images with matching "_rois.zip" will be skipped. At the end of the run, a set of "_rois.zip" files will be output to the same folder along with a summary .csv with status on all images.
 
-# corrected fluorescence
+## corrected fluorescence
 After segmentation produces a set of ROIs, corrected fluorescence can be calculated using this plugin. With a single image and its ROIs open in Fiji, select "Process" -> "Calculate Fluorescence". The plugin will calculate the corrected fluorescence and output a new window with stats for each ROI.
 
 This function can also be performed on a folder with many images. After processing the images using Batch Segmentation, go to "Process" -> "Batch" -> "Calculate Fluorescence (Folder)" and select a folder of images. CSV files with the corrected fluorescence will be output for each image in the folder with a matching "_rois.zip" file.
 
-# batch conversion of .czi files
+## batch conversion of .czi files
 Files output from ZEISS microscopes can come in the form of .czi stack images, which are 3D. To use with Cellpose available within this plugin, these images must be flattened into a single plane. A max-intensity Z-projection can be performed on an entire folder of .czi files using this plugin. Go to "Process" -> "Batch" -> "Flatten Stacks" and select a folder of .czi files. The plugin will leave .czi files and output in the same folder flattened images with _MAX.png extensions.
