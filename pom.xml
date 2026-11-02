@@ -24,13 +24,13 @@
         <relativePath/>
     </parent>
 
-    <groupId>com.example</groupId>
+    <groupId>com.cellpose</groupId>
     <artifactId>cellpose-fiji</artifactId>
-    <version>0.1.0</version>
+    <version>0.3.1</version>
 
-    <name>Cellpose Fiji Commands</name>
-    <description>Cellpose segmentation and model management commands for Fiji, with explicit menu ordering.</description>
-    <url>https://example.com/cellpose-fiji</url>
+    <name>Cellpose Fiji</name>
+    <description>Fiji plugin to implement Cellpose 4.2.1.1 access with custom-trained models</description>
+    <url>https://github.com/ena-edmonds/cellpose-fiji</url>
     <inceptionYear>2026</inceptionYear>
     <organization>
         <name>Example</name>
@@ -38,15 +38,15 @@
     </organization>
     <licenses>
         <license>
-            <name>Simplified BSD License</name>
-            <distribution>repo</distribution>
+            <name>MIT License</name>
+            <distribution>https://mit-license.org/</distribution>
         </license>
     </licenses>
 
     <developers>
         <developer>
-            <id>you</id>
-            <name>Your Name</name>
+            <id>ena</id>
+            <name>Ena Edmonds</name>
         </developer>
     </developers>
     <contributors>
@@ -61,23 +61,23 @@
     </mailingLists>
 
     <scm>
-        <connection>scm:git:https://github.com/you/cellpose-fiji</connection>
-        <developerConnection>scm:git:git@github.com:you/cellpose-fiji</developerConnection>
+        <connection>scm:git:https://github.com/ena-edmonds/cellpose-fiji/</connection>
+        <developerConnection>scm:git:git@github.com:ena-edmonds/cellpose-fiji</developerConnection>
         <tag>HEAD</tag>
-        <url>https://github.com/you/cellpose-fiji</url>
+        <url>https://github.com/ena-edmonds/cellpose-fiji/</url>
     </scm>
     <issueManagement>
         <system>GitHub Issues</system>
-        <url>https://github.com/you/cellpose-fiji/issues</url>
+        <url>https://github.com/ena-edmonds/cellpose-fiji/issues</url>
     </issueManagement>
     <ciManagement>
         <system>None</system>
     </ciManagement>
 
     <properties>
-        <package-name>com.example.cellpose</package-name>
-        <license.licenseName>bsd_2</license.licenseName>
-        <license.copyrightOwners>Your Name</license.copyrightOwners>
+        <package-name>com.cellpose</package-name>
+        <license.licenseName>mit-license</license.licenseName>
+        <license.copyrightOwners>Ena Edmonds</license.copyrightOwners>
         <!--
           pom-scijava pins the compiler release low (8/11) for broad compatibility.
           The Python worker scripts use Java text blocks (""" ... """), which need
