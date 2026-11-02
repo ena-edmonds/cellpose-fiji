@@ -63,14 +63,6 @@ public class SegmentImage implements Command {
                     }
                 });
                 task.waitFor();
-
-                // Cache whether this machine actually has a usable GPU, so future runs
-                // can show/hide the checkbox correctly (see GpuSupport).
-                Object avail = task.outputs.get("gpu_available");
-                if (avail instanceof Boolean) {
-                    GpuSupport.recordAvailability((Boolean) avail);
-                }
-
                 busy.interrupt(); // stop the busy animation
             }
 

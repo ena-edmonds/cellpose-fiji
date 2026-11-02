@@ -72,7 +72,6 @@ public class BatchSegmentFolder implements Command {
             // Set up variables for tracking progress and final output
             int total = images.size();
             int processed = 0, skipped = 0, failed = 0;
-            boolean recordedAvailability = false;
             List<String> summaryRows = new ArrayList<>(); // "image name, roi count, mean roi size (px)" for each image
 
             // Try building and initializing the environment
@@ -104,15 +103,6 @@ public class BatchSegmentFolder implements Command {
 
                         Service.Task task = CellposeEnv.run(python, inputs); // segment the image!
                         task.waitFor();
-
-                        // Cache GPU availability once per batch (same on every image).
-                        if (!recordedAvailability) {
-                            Object avail = task.outputs.get("gpu_available");
-                            if (avail instanceof Boolean) {
-                                GpuSupport.recordAvailability((Boolean) avail);
-                                recordedAvailability = true;
-                            }
-                        }
 
                         // Build the label image and save mask + ROIs.
                         processor.readMask(ndMask);

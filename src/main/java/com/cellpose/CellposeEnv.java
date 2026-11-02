@@ -108,7 +108,6 @@ task.update("Loading model", current=1, maximum=3)
 
 cuda_ok = torch.cuda.is_available()
 mps_ok = getattr(torch.backends, "mps", None) is not None and torch.backends.mps.is_available()
-task.outputs["gpu_available"] = bool(cuda_ok or mps_ok)
 
 if use_gpu and cuda_ok:
     device = torch.device("cuda")

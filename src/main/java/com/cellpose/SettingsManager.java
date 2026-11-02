@@ -3,13 +3,14 @@ package com.cellpose;
 import java.io.*;
 import java.util.*;
 import ij.IJ;
+import ij.Prefs;
 import ij.gui.GenericDialog;
 
-
 public class SettingsManager {
-    private boolean showGpu;
-    private boolean useGpu;
+    private static final String GPU_LAST_CHOICE = "cellpose.useGpu";
+
     private String model;
+    private boolean useGpu;
     private boolean canceled;
 
     private int cell_diameter;
@@ -22,8 +23,6 @@ public class SettingsManager {
         min_cell_size = 15;
         cellprob_threshold = 0.0;
         flow_threshold = 0.0;
-        showGpu = GpuSupport.shouldShowCheckbox();
-        useGpu = false;
     }
 
     public void collectSettings() {
@@ -46,7 +45,7 @@ public class SettingsManager {
             // Populate model run settings dialogue
             GenericDialog gd = new GenericDialog("Segment Image");
             gd.addChoice("Model", models, models[0]);
-            if (showGpu) gd.addCheckbox("Use GPU", GpuSupport.defaultChecked());
+            gd.addCheckbox("Use GPU", Prefs.get(GPU_LAST_CHOICE, false));
             gd.addCheckbox("Advanced mode", false);
 
             gd.showDialog();
@@ -54,10 +53,9 @@ public class SettingsManager {
 
             model = gd.getNextChoice();
             if (model.equals("untrained")) model = "cpsam_v2";
-            if (showGpu) {
-                useGpu = gd.getNextBoolean();
-                GpuSupport.recordChoice(useGpu);
-            }
+            useGpu = gd.getNextBoolean();
+            Prefs.set(GPU_LAST_CHOICE, Boolean.toString(useGpu));
+            Prefs.savePreferences();
             if(gd.getNextBoolean()) collectAdvancedSettings();
 
         } catch(Exception e) {
