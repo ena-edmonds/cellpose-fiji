@@ -26,7 +26,7 @@
 
     <groupId>com.cellpose</groupId>
     <artifactId>cellpose-fiji</artifactId>
-    <version>0.3.1</version>
+    <version>0.3.2</version>
 
     <name>Cellpose Fiji</name>
     <description>Fiji plugin to implement Cellpose 4.2.1.1 access with custom-trained models</description>

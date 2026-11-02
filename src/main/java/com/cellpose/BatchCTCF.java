@@ -6,9 +6,9 @@ import ij.gui.Roi;
 import ij.gui.ShapeRoi;
 import ij.io.RoiDecoder;
 import ij.measure.ResultsTable;
+import ij.io.DirectoryChooser;
 
 import org.scijava.command.Command;
-import org.scijava.plugin.Parameter;
 import org.scijava.plugin.Plugin;
 
 import java.io.ByteArrayOutputStream;
@@ -32,14 +32,16 @@ public class BatchCTCF implements Command {
     private static final Set<String> NON_IMAGE_EXT =
             new HashSet<>(Arrays.asList("zip", "csv", "txt", "roi", "json", "npy", "md", "log"));
 
-    @Parameter(label = "Folder", style = "directory")
-    private File folder;
-
-    @Parameter(label = "Channel to measure", min = "1")
     private int channel = 1;
 
     @Override
     public void run() {
+        // Pick the folder
+        DirectoryChooser dc = new DirectoryChooser("Choose a folder");
+        String dirPath = dc.getDirectory();
+        if(dirPath == null) return; // canceled
+        File folder = new File(dirPath);
+
         File[] files = folder.listFiles();
         if (files == null) {
             IJ.error("CTCF Batch", "Can't read folder: " + folder);
